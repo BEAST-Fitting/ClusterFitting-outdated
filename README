@@ -7,5 +7,14 @@ Dan Weisz, Morgan Fouesneau, Julianne Dalcanton (UofWA)
 David Hogg (NYU)
 Hans-Walter Rix (MPIA)
 
+Running the code requires n-dim FITS files output from the individual
+SED fitting code.  The code make_cluster_stellar_prob.pro should also
+be run before running the main code fit_cluster_prob.pro.
+
+See the fit_cluster_prob.pro file for how to run the code and an
+example.
+
+History:
 23 Jul 2012: first commit of code (KDG)
-             based on work done in Mar at NYU, Jul at MPIA, and at random times at STScI
+             based on work done in Mar at NYU, Jul at MPIA, and 
+             at random times at STScI

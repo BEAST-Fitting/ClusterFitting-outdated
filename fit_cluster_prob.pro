@@ -55,6 +55,15 @@
 ; PROCEDURE:
 ;
 ; EXAMPLE:
+;       fit_cluster_prob,'pc74_jul12_fitinfo_av025_rv05/*.gz',run_tag='pc74_test_23jul12', $
+;                 cluster_av_range=[0.0,3.0],cluster_av_sigma_range=[0.1,0.1],cluster_rv_range=[0.0,0.0]
+;
+;       This example runs on the PHAT cluster pc74 for the default
+;       range of cluster alpha and age, an A(V) range from 0 to 3 mag
+;       with a single value of sigma A(V) of 0.1.  The code doesn't
+;       currently support R(V), so setting the cluster_rv_range
+;       min=max just disables R(V) [code to be added soon to evalute
+;       the most likely cluster R(V) value].
 ;
 ; MODIFICATION HISTORY:
 ; 	Started     : Karl Gordon (NYU, Camp Hogg, 12 Mar 2012)
