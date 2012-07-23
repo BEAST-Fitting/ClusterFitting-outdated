@@ -15,6 +15,10 @@ See the fit_cluster_prob.pro file for how to run the code and an
 example.
 
 History:
+23 Jul 2012: Added fit_cluster_prob_sparse.pro (KDG)
+             First attempt at using sparse memory mapping to improve
+             the speed and memory usage of the code
+
 23 Jul 2012: first commit of code (KDG)
              based on work done in Mar at NYU, Jul at MPIA, and 
              at random times at STScI
