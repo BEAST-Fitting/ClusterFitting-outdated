@@ -26,16 +26,19 @@
 ;
 ; KEYWORD PARAMETERS:
 ;       run_tag : string to use to identify this run in output filenames
+;       mod_tag : string to use to identify the stellar probability filename
 ;       field_eps : field population epsilon [default is 0]
 ;       silent : surpress all screen output (except error messages)
 ;       debug : settings for debugging (fewer files, etc.)
+;       max_files : maximum number of stellar files to read
+;                   random set of full list used
 ;
 ;     The following parameters all have defaults if not set.  Run code
 ;     w/o any parameters and they will be printed to the screen.
-;       cluster_age_range : range of cluster ages [in log10 Myears units]
-;       cluster_age_delta : delta of cluster ages [in log10 Myears units]
 ;       cluster_alpha_range : range of cluster alpha [IMF slope]
 ;       cluster_alpha_delta : delta of cluster alpha [IMF slope]
+;       cluster_age_range : range of cluster ages [in log10 Myears units]
+;       cluster_age_delta : delta of cluster ages [in log10 Myears units]
 ;       cluster_av_range : range of cluster A(V) assuming a log-normal
 ;                          distribution
 ;       cluster_av_delta : delta of cluster A(V)
@@ -60,14 +63,14 @@
 ;       23 Jul 2012 : Cleaned and added full documentation added (KDG)
 ;-
 
-pro fit_cluster_prob,star_filebase,run_tag=run_tag,field_eps=field_eps,debug=debug, $
+pro fit_cluster_prob,star_filebase,run_tag=run_tag,mod_tag=mod_tag,field_eps=field_eps, $
+                     debug=debug,max_files=max_files,silent=silent, $
                      cluster_age_range=cluster_age_range,cluster_age_delta=cluster_age_delta, $
                      cluster_alpha_range=cluster_alpha_range,cluster_alpha_delta=cluster_alpha_delta, $
                      cluster_av_range=cluster_av_range,cluster_av_delta=cluster_av_delta, $
                      cluster_av_sigma_range=cluster_av_sigma_range,cluster_av_sigma_delta=cluster_av_sigma_delta, $
-                     cluster_rv_range=cluster_rv_range,cluster_rv_delta=cluster_rv_delta, $
-                     silent=silent
-                     
+                     cluster_rv_range=cluster_rv_range,cluster_rv_delta=cluster_rv_delta
+
 ; setup the range of cluster parameters (theta) to search over
 ; default are present if they are not set
 
@@ -89,7 +92,7 @@ if (not keyword_set(cluster_rv_delta)) then cluster_rv_delta = 0.5
 
 ; check we got at least 1 parameters
 if (N_params() LT 1) then begin
-    print,"Syntax - fit_cluster_prob,star_filebase,run_tag='',field_eps=0.0,/debug,/silent"
+    print,"Syntax - fit_cluster_prob,star_filebase,run_tag='',mod_tag='',field_eps=0.0,/debug,/silent"
     print,'Other Keywords: 
     print,'          cluster_alpha_range, cluster_alpha_delta,'
     print,'          cluster_age_range, cluster_age_delta,'
@@ -126,9 +129,25 @@ if (cluster_av_sigma_range[0] LE 0.0) then begin
 endif
 
 if (not keyword_set(run_tag)) then run_tag = 'fit_cluster_prob'
+if (not keyword_set(mod_tag)) then mod_tag = 'cluster_test'
 
 ; temporary? keyword for field_eps
 if (not keyword_set(field_eps)) then field_eps = 0.0
+
+; get the set of stellar probabilities for this set of stellar cluster parameters
+full_stellar_prob_filename = mod_tag+'_stellar_prob_av025_rv05.fits'
+fits_read,full_stellar_prob_filename,full_stellar_prob,fs_header
+; check that the min/max cluster parameter are the same
+if ((cluster_alpha_range[0] NE fxpar(fs_header,'ALPHMIN')) OR (cluster_alpha_range[1] NE fxpar(fs_header,'ALPHMAX')) OR $
+    (cluster_alpha_delta NE fxpar(fs_header,'ALPHDELT'))) then begin
+    print,'cluster_alpha_range/delta does not match the range in ' + full_stellar_prob_filename
+    return
+endif
+if ((cluster_age_range[0] NE fxpar(fs_header,'AGEMIN')) OR (cluster_age_range[1] NE fxpar(fs_header,'AGEMAX')) OR $
+    (cluster_age_delta NE fxpar(fs_header,'AGEDELT'))) then begin
+    print,'cluster_age_range/delta does not match the range in ' + full_stellar_prob_filename
+    return
+endif
 
 ; get the files with the nD probability distributions for each
 ; potential cluster star
@@ -141,7 +160,24 @@ if (n_files LE 0) then begin
 endif
 
 ; debugging on fewer files
-if (keyword_set(debug)) then n_files = min([50,n_files])
+if (keyword_set(max_files)) then begin
+    ; generate max_files *unique* indexes
+    ; taken from http://www.idlcoyote.com/code_tips/randomindex.html
+    M = max_files
+    len = n_files
+    inds = LonArr(M, /NOZERO)
+    n = M
+    WHILE n GT 0 DO BEGIN 
+        inds[M-n] = Long(RandomU(seed, n)*len)
+        inds = inds[Sort(inds)]
+        u = Uniq(inds)
+        n = M - N_Elements(u)
+        inds[0] = inds[u]
+    ENDWHILE
+    indxs = inds[sort(inds)]
+    files = files[indxs]
+    n_files = max_files
+endif
 
 ; go through the list of stars and read in the nD PDF for each one
 if (not keyword_set(silent)) then print,'# of individual star files = ' + strtrim(string(n_files),2)
@@ -242,7 +278,8 @@ for i = 0,(cluster_alpha_npts-1) do begin
 
         ; get the stellar portion of p(gamma|theta)
         ;   2D in log(teff) & log(g)
-        p_stellar = get_cluster_stellar_prob(cluster_alpha_vals[i],cluster_age_vals[j],grid_seds=grid_seds)
+        p_stellar = full_stellar_prob[*,*,i,j]
+;        p_stellar = get_cluster_stellar_prob(cluster_alpha_vals[i],cluster_age_vals[j],grid_seds=grid_seds)
 
         if (keyword_set(debug)) then begin
             fits_write,'test_stellar_prob_alpha_' + strtrim(string(cluster_alpha_vals[i],format='(F10.2)'),2) + $
@@ -256,13 +293,17 @@ for i = 0,(cluster_alpha_npts-1) do begin
                 ; get the lognormal screen distribution
                 ;   1D in single star A(V) space
                 if (cluster_av_vals[k] GT 0) then begin
-                    p_av = prob_dust_lognormal(star_av_vals,cluster_av_vals[k],cluster_av_sigma_vals[l])
+                    p_av = get_cluster_dust_lognormal(star_av_vals,cluster_av_vals[k],cluster_av_sigma_vals[l])
                 endif else begin ; special case if A(V) is set to 0
                     p_av = star_av_vals*0.
                     p_av[0] = 1.0
                 endelse
                 p_av /= total(p_av)
 
+;                kplot,star_av_vals,p_av,pysm=100
+;                ans = ''
+;                read,ans
+                
                 for m = 0,(cluster_rv_npts-1) do begin
                     if (not keyword_set(silent)) then begin
                         print,'calculating theta [alpha, age, A(V), delta A(V), R(V)] = ', $
