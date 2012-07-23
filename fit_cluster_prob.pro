@@ -18,7 +18,7 @@
 ;       Bayesian fitting.
 ;
 ; CALLING SEQUENCE:
-;       FIT_CLUSTER_PROB
+;       FIT_CLUSTER_PROB,star_filebase
 ;
 ; INPUTS:
 ;       star_filebase : filebase for the individual star nD
@@ -97,6 +97,7 @@ if (N_params() LT 1) then begin
     print,'          cluster_av_sigma_range, cluster_av_sigma_delta,'
     print,'          cluster_rv_range, cluster_rv_delta'
     print,'      range = 2 element vector, delta = scaler'
+    print,'      range min=max results in a single value of that parameter'
     print,''
     print,'default cluster parameters are:'
     print,'Alpha [IMF slope]: ' + strtrim(string(cluster_alpha_range[0],format="(F10.2)"),2) + $
@@ -114,6 +115,13 @@ if (N_params() LT 1) then begin
     print,'       R(V) [mag]: ' + strtrim(string(cluster_rv_range[0],format="(F10.2)"),2) + $
           ' to ' + strtrim(string(cluster_rv_range[1],format="(F10.2)"),2) + ' in steps of ' + $
           strtrim(string(cluster_rv_delta,format="(F10.2)"),2)
+    return
+endif
+
+; check we don't have physically incorrect values of cluster parameters
+;   - more checks need to be added
+if (cluster_av_sigma_range[0] LE 0.0) then begin
+    print,'minimum cluster sigma A(V) range cannot be <= 0'
     return
 endif
 
@@ -141,7 +149,7 @@ if (not keyword_set(silent)) then print,'# of individual star files = ' + strtri
 star_ra = dblarr(n_files)
 star_dec = dblarr(n_files)
 for i = 0,(n_files-1) do begin
-    print,'reading in star file = ' + files[i]
+    if (not keyword_set(silent)) then print,'reading in star file = ' + files[i]
     fits_open,files[i],ifcb
     fits_read,ifcb,sed,main_header,exten_no=1
 
@@ -183,7 +191,6 @@ p_gamma_theta_cluster = dblarr(size_oneprob[1],size_oneprob[2],size_oneprob[3],s
 ;fits_read,cluster_p_gamma_theta_field,p_gamma_theta_field,pgtf_header
 ;  - right now it is a flat PDF
 p_gamma_theta_field = p_gamma_theta_cluster*0.0 + 1.0
-
 
 ; get the membership probabilities for each star, 1D vector by star
 ;p_membership = pmem(star_ra, star_dec, cluster_rc, cluster_c, cluster_ra, cluster_dec)

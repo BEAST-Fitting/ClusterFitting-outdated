@@ -1,0 +1,12 @@
+README for the Cluster Nut Cracker Code
+Bayesian cluster fitting for PHAT
+
+Combined effort of:
+Karl Gordon (STScI)
+Dan Weisz, Morgan Fouesneau, Julianne Dalcanton (UofWA)
+David Hogg (NYU)
+Hans-Walter Rix (MPIA)
+
+23 Jul 2012: first commit of code (KDG)
+             based on work done in Mar at NYU and Jul at MPIA
+   (1st commit is just a single piece of the full code - more to follow today - this comment will be removed then)
