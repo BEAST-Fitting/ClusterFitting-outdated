@@ -1,11 +1,18 @@
-README for the Cluster Nut Cracker Code
+# Cluster Nut Cracker Code
+
 Bayesian cluster fitting for PHAT
 
 Combined effort of:
-Karl Gordon (STScI)
-Dan Weisz, Morgan Fouesneau, Julianne Dalcanton (UofWA)
-David Hogg (NYU)
-Hans-Walter Rix (MPIA)
+* Karl Gordon (STScI)
+* Dan Weisz, Morgan Fouesneau, Julianne Dalcanton (UofWA)
+* David W. Hogg (NYU)
+* Hans-Walter Rix (MPIA)
+
+## Python code:
+
+[DW: put material here]
+
+## IDL code:
 
 Running the code requires n-dim FITS files output from the individual
 SED fitting code.  The code make_cluster_stellar_prob.pro should also
@@ -14,7 +21,8 @@ be run before running the main code fit_cluster_prob.pro.
 See the fit_cluster_prob.pro file for how to run the code and an
 example.
 
-History:
+## History:
+
 23 Jul 2012: Added fit_cluster_prob_sparse.pro (KDG)
              First attempt at using sparse memory mapping to improve
              the speed and memory usage of the code
