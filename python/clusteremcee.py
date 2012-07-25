@@ -14,7 +14,7 @@ def lognorm(x,mu,sig):
     vals[indxs] = (1/(x[indxs]*np.sqrt(2*np.pi)*sig)) * np.exp(-0.5 * (np.log(x[indxs]/mu)/sig)**2)
     return vals
 
-def prob_dust( xAv, mu, sig, AvMW=0.0):
+def prob_dust(xAv, mu, sig, AvMW=0.0):
     return AvMW + lognorm(xAv, mu, sig)
 
 def get_completeness():
@@ -42,9 +42,49 @@ def star_prob(alpha, age):
     return full_stellar_prob[:,:,walpha, wage]
 
 
+def lnprob(theta,p_gamma_theta_cluster=p_gamma_theta_cluster):
+    theta_prob = 0.
+    p_stellar = star_prob(theta[0], theta[1])
+    if (theta[2] > 0.):
+        p_av = prob_dust(star_av_vals, theta[2], theta[3])
+        p_av /= p_av.sum()
+        test = p_av.max()
+    elif (theta[2] == 0):
+        p_av = star_av_vals*0.
+        p_av[0] = 1
+        p_av /= p_av.sum()
+        test = 0
+    elif (theta[2] < 0.):
+        p_av = star_av_vals*0. + 1e-50
+        test = -99
+
+    print theta, test
+
+    for x in range(len(fullprob[0,0,:,0])):
+        for y in range(len(fullprob[0,0,0,:])):
+            p_gamma_theta_cluster[:,:,x,y] = p_stellar*p_av[x]
+    p_gamma_theta_cluster *= get_completeness()
+    p_gamma_theta_cluster /= np.sum(p_gamma_theta_cluster)
+    p_gamma_theta = (1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
+    for c in range(nfiles):
+        tprob_full = fullprob[:,:,:,:]*p_gamma_theta
+        tprob = np.sum(tprob_full)
+        if ((field_eps <= 0.) & (tprob < 1e-50)): tprob = 1e-50
+        theta_prob += np.log(tprob)
+    print theta, theta_prob
+    return theta_prob
 
 
-nfiles=1 # change to correct number of files when I scale this up
+
+filelist = np.loadtxt('mock4_cl/temp', dtype="string")
+
+nfiles=len(filelist) # change to correct number of files when I scale this up
+
+for c in range(nfiles):
+        tprob_full = fullprob[:,:,:,:]*p_gamma_theta
+        tprob = np.sum(tprob_full)
+        if ((field_eps <= 0.) & (tprob < 1e-50)): tprob = 1e-50
+        theta_prob += np.log(tprob)
 
 
 #read in single star .fits file
@@ -105,53 +145,12 @@ p_gamma_theta_field /= np.sum(p_gamma_theta_field)
 
 field_eps = 0.
 
-alpha=0.6
-age = 17.
-av = 0.5
-av_sig = 0.5
 
 
 # theta = {alpha, age, av, av_sig}
 
 
-def lnprob(theta,p_gamma_theta_cluster=p_gamma_theta_cluster):
-    theta_prob = 0.
-    p_stellar = star_prob(theta[0], theta[1])
-    if (theta[2] > 0.):
-        p_av = prob_dust(star_av_vals, theta[2], theta[3])
-        p_av /= p_av.sum()
-        test = p_av.max()
-    elif (theta[2] == 0):
-        p_av = star_av_vals*0.
-        p_av[0] = 1
-        p_av /= p_av.sum()
-        test = 0
-    elif (theta[2] < 0.):
-        p_av = star_av_vals*0. + 1e-50
-        test = -99
 
-    print theta, test
-
-    for x in range(len(fullprob[0,0,:,0])):
-        for y in range(len(fullprob[0,0,0,:])):
-            p_gamma_theta_cluster[:,:,x,y] = p_stellar*p_av[x]
-    p_gamma_theta_cluster *= get_completeness()
-    p_gamma_theta_cluster /= np.sum(p_gamma_theta_cluster)
-    p_gamma_theta = (1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
-    for c in range(nfiles):
-        tprob_full = fullprob[:,:,:,:]*p_gamma_theta
-        tprob = np.sum(tprob_full)
-        if ((field_eps <= 0.) & (tprob < 1e-50)): tprob = 1e-50
-        theta_prob += np.log(tprob)
-    print theta, theta_prob
-    return theta_prob
-             
-#if ((field_eps <= 0.) & (tprob < 1e-20)):
-#        tprob = 1e-20
-#        theta_prob[i,j,k,l, m] += np.log(tprob)
-        #print alpha_grid[i], age_grid[j], av_grid[k], av_sig_grid[l], rv_grid[m], theta_prob[i,j,k,l,m]
-
-#test = lnprob(2.5, 10., 0.5, 0.2)
 
 nwalkers = 8
 ndim = 4
@@ -169,54 +168,6 @@ sampler.reset()
 sampler.run_mcmc(np.array(pos),nsteps, rstate0=state)
 duration = time.time()-start
 
-'''
-if ((field_eps <= 0.) & (tprob < 1e-20)):
-    tprob = -np.infinity
-theta_prob[i,j,k,l, m] += np.log(tprob)
-
-tprob_full = fullprob[:,:,:,:]*p_gamma_theta
-                    tprob = np.sum(tprob_full)
-
-
-
-
-
-
-for i in range(len(alpha_grid)):
-    for j in range(len(age_grid)):
-        # get stellar portion of p(gamma_theta), 2D in log(teff), log(g)
-        p_stellar = full_stellar_prob[:,:,i,j]
-        for k in range(len(av_grid)):
-            for l in range(len(av_sig_grid)):
-                if (av_grid[k] > 0.):
-                    p_av = prob_dust(star_av_vals, av_grid[k], av_sig_grid[l])
-                else:
-                    p_av = star_av_vals*0.
-                    p_av[0] = 1.
-                p_av /= np.sum(p_av)
-                for m in range(len(rv_grid)):
-                    #Does nothing for now
-
-                    for x in range(len(fullprob[0,0,:,0])):
-                        for y in range(len(fullprob[0,0,0,:])):
-                            p_gamma_theta_cluster[:,:,x,y] = p_stellar*p_av[x]
-                                  
-               
-                    completeness_function = 1.
-                    field_eps = 0.
-                    p_gamma_theta_cluster *= completeness_function
-                    p_gamma_theta_cluster /= p_gamma_theta_cluster.sum()
-                    p_gamma_theta = (1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
-                    # compute total probability for star 'c'
-                    #for c in range(len(nfiles)):
-                    tprob_full = fullprob[:,:,:,:]*p_gamma_theta
-                    tprob = np.sum(tprob_full)
-                    
-                    if ((field_eps <= 0.) & (tprob < 1e-20)):
-                        tprob = 1e-20
-                    theta_prob[i,j,k,l, m] += np.log(tprob)
-                    print alpha_grid[i], age_grid[j], av_grid[k], av_sig_grid[l], rv_grid[m], theta_prob[i,j,k,l,m]
-'''
 
 
 
