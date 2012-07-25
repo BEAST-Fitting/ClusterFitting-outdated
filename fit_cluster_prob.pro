@@ -273,7 +273,8 @@ theta_prob = replicate(0.d0,cluster_alpha_npts,cluster_age_npts, $
 ; this is currently in a highly developmental state
 ;  - will need to figure out how we are specificying this 
 ;    (currently hard codeds)
-completeness_function = get_cluster_completeness()
+;completeness_function = get_cluster_completeness()
+completeness_function = 1.
 
 ; multiply by both the field by the completeness function *and* normalize to 1
 p_gamma_theta_field *= completeness_function
@@ -290,30 +291,37 @@ for i = 0,(cluster_alpha_npts-1) do begin
         p_stellar = full_stellar_prob[*,*,i,j]
 ;        p_stellar = get_cluster_stellar_prob(cluster_alpha_vals[i],cluster_age_vals[j],grid_seds=grid_seds)
 
+
         if (keyword_set(debug)) then begin
             fits_write,'test_stellar_prob_alpha_' + strtrim(string(cluster_alpha_vals[i],format='(F10.2)'),2) + $
                        '_age_' + strtrim(string(cluster_age_vals[j],format='(F10.2)'),2) + '.fits', $
                        p_stellar
-        endif
+         endif
+     
+
 
         for k = 0,(cluster_av_npts-1) do begin
             for l = 0,(cluster_av_sigma_npts-1) do begin
-
                 ; get the lognormal screen distribution
                 ;   1D in single star A(V) space
                 if (cluster_av_vals[k] GT 0) then begin
                     p_av = get_cluster_dust_lognormal(star_av_vals,cluster_av_vals[k],cluster_av_sigma_vals[l])
+                    
                 endif else begin ; special case if A(V) is set to 0
                     p_av = star_av_vals*0.
                     p_av[0] = 1.0
                 endelse
                 p_av /= total(p_av)
+                ;print, max(p_av), i,j,k,l
+
+            
+
 
 ;                kplot,star_av_vals,p_av,pysm=100
 ;                ans = ''
 ;                read,ans
                 
-                for m = 0,(cluster_rv_npts-1) do begin
+               for m = 0,(cluster_rv_npts-1) do begin
                     if (not keyword_set(silent)) then begin
                         print,'calculating theta [alpha, age, A(V), delta A(V), R(V)] = ', $
                               cluster_alpha_vals[i], cluster_age_vals[j], $
@@ -358,13 +366,13 @@ for i = 0,(cluster_alpha_npts-1) do begin
     endfor
 endfor
 
-; find and renomalize by the maximum probability
-max_tp = max(theta_prob)
-if (not keyword_set(silent)) then print,'max theta_prob = ', max_tp
-theta_prob -= max_tp
+;; ; find and renomalize by the maximum probability
+;; max_tp = max(theta_prob)
+;; if (not keyword_set(silent)) then print,'max theta_prob = ', max_tp
+;; theta_prob -= max_tp
 
-fxhmake,header,theta_prob,/initialize
-sxaddpar,header,'MAX_PROB',max_tp,' Maximum probability used to normalize (subtract)'
-fits_write,run_tag+'_theta_prob.fits',theta_prob,header
+;; fxhmake,header,theta_prob,/initialize
+;; sxaddpar,header,'MAX_PROB',max_tp,' Maximum probability used to normalize (subtract)'
+;; fits_write,run_tag+'_theta_prob.fits',theta_prob,header
 
 end
