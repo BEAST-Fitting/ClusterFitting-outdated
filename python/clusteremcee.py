@@ -68,73 +68,66 @@ theta_prob = 0.
 star_av_vals = np.zeros((41, nfiles))
 star_rv_vals = np.zeros((10, nfiles))
 fullprob = np.zeros((76, 51, 41, 10, nfiles))
+p_gamma_theta_cluster = np.zeros((76, 51, 41, 10, nfiles))
+p_gamma_theta_field = np.ones((76, 51, 41, 10, nfiles))
+p_gamma_theta_field *= get_completeness()
+p_gamma_theta_field /= np.sum(p_gamma_theta_field)
 
 
 
 for c in range(nfiles):
     print 'Reading in Star Number ', c, 'of ', nfiles
     star_av_vals[:,c] = pyfits.getdata('mock4_cl/'+filelist[c], extname='AV_PROB')[1,:]
-    star_rv_vals[c] = pyfits.getdata('mock4_cl/'+filelist[c], extname='RV_PROB')[1,:]
+    star_rv_vals[:,c] = pyfits.getdata('mock4_cl/'+filelist[c], extname='RV_PROB')[1,:]
     fullprob[:,:,:,:,c] = np.transpose(pyfits.getdata('mock4_cl/'+filelist[c], extname='FULL_PROB'))
     fullprob[:,:,:,:,c] /= fullprob[:,:,:,:,c].sum()
 
 
-def lnprob(theta, filelist=filelist, theta_prob=theta_prob):
-    for c in range(nfiles):
-        
-        
-    #initizlie model cluster PDF
-        p_gamma_theta_cluster = fullprob[:,:,:,:,c]*0
-        #print 'p_gamma_theta_cluster = fullprob*0'
-    #PDF for field, set flat by default
-        p_gamma_theta_field = p_gamma_theta_cluster*0.0 + 1.0
-        #print 'p_gamma_theta_field = p_gamma_theta_cluster*0.0 + 1.0'
-        p_gamma_theta_field *= get_completeness()
-        #print 'p_gamma_theta_field *= get_completeness()'
-        p_gamma_theta_field /= np.sum(p_gamma_theta_field)
-        #print 'p_gamma_theta_field /= np.sum(p_gamma_theta_field)'
+def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluster=p_gamma_theta_cluster, p_gamma_theta_field=p_gamma_theta_field):
+    
+    priorcheck = [ (theta[0] >= alpha_grid.min()), (theta[0] <= alpha_grid.max()), (theta[1] >= age_grid.min()), (theta[1] <= age_grid.max()), (theta[2] >= av_grid.min()), (theta[2] <= av_grid.max()), (theta[3] >= av_sig_grid.min()), (theta[3] <= av_sig_grid.max())]
 
+    if not (False in priorcheck):
         p_stellar, walpha, wage = star_prob(theta[0], theta[1])
         #print 'p_stellar done'
         if (theta[2] > 0.):
-            p_av = prob_dust(star_av_vals[:,c], theta[2], theta[3])
-            p_av /= p_av.sum()
-            
+            p_av = prob_dust(star_av_vals[:, :], theta[2], theta[3])
+            p_av /= [p_av[:,i].sum() for i in range(nfiles)]
+
         elif (theta[2] == 0):
-            p_av = star_av_vals[:,c]*0.
-            p_av = 1
-            p_av /= p_av.sum()        
+            p_av = np.ones_like(star_av_vals)
+            #p_av = star_av_vals[:,:]*0.
+            #p_av = 1
+            #p_av /= p_av.sum()        
         elif (theta[2] < 0.):
-            p_av = star_av_vals[:,c]*0. + 1e-50
-        #p_gamma_theta_cluster1 = p_gamma_theta_cluster  
-        #p_gamma_theta_cluster1[:,:,walpha,wage] = p_stellar*p_av[walpha]
-        #for x, y in it.product(np.arange(len(fullprob[0,0,:,0])), np.arange(len(fullprob[0,0,0,:]))):
-        #    p_gamma_theta_cluster[:,:,x,y] = p_stellar*p_av[x]
-        #print (p_gamma_theta_cluster1 -p_gamma_theta_cluster).sum()
-        #pdb.set_trace()
-        
-            #print x, y
-        
-        #pdb.set_trace()
-        for x in range(len(fullprob[0,0,:,0])):
-            for y in range(len(fullprob[0,0,0,:])):
-                p_gamma_theta_cluster[:,:,x,y] = p_stellar*p_av[x]
+            p_av = np.zeros_like(star_av_vals)+1e-50
+        for c in range(nfiles):
+            for x in range(len(fullprob[0,0,:,0])):
+                for y in range(len(fullprob[0,0,0,:])):
+                    p_gamma_theta_cluster[:,:,x,y,c] = p_stellar*p_av[x,c]
         #pdb.set_trace()
         p_gamma_theta_cluster *= get_completeness()
+        #p_gamma_theta_cluster[:,:,:,:,i] /= [p_gamma_theta_cluster[:,:,:,:,i].sum() for i in range(nfiles)]
         p_gamma_theta_cluster /= np.sum(p_gamma_theta_cluster)
-        p_gamma_theta = (1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
-        #pdb.set_trace()        
-        tprob_full = fullprob[:,:,:,:,c]*p_gamma_theta
-        tprob = np.sum(tprob_full)
         #pdb.set_trace()
-        #print c, theta, tprob, p_gamma_theta_cluster.sum()
+        #p_gamma_theta = (1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
+        p_gamma_theta =  p_gamma_theta_cluster #(1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
+       
+        #pdb.set_trace()        
+        tprob_full = fullprob[:,:,:,:,:]*p_gamma_theta
+        tprob = np.sum(tprob_full)
+            #pdb.set_trace()
+            #print c, theta, tprob, p_gamma_theta_cluster.sum()
         theta_prob += np.log(tprob)
-        #print theta, tprob, theta_prob
-    #if ((field_eps <= 0.) & (tprob < 1e-50)): 
-    #    theta_prob = -np.infty
-    #else:        
-    #    theta_prob += np.log(tprob)
-    print theta, theta_prob, p_gamma_theta_cluster.sum()
+            #print theta, tprob, theta_prob
+        if ((field_eps <= 0.) & (tprob < 1e-50)): 
+            theta_prob = -np.infty
+        #else:        
+        #    theta_prob += np.log(tprob)
+    else:
+        theta_prob = -np.infty
+
+    print theta, theta_prob
     return theta_prob
 
 
