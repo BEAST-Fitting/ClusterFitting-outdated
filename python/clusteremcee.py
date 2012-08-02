@@ -7,18 +7,27 @@ import emcee
 import idlsave
 import time
 import itertools as it
- 
+
 
 def lognorm(x,mu,sig):
-    indxs = np.where(x > 0)
-    vals = x*0.
-    vals[indxs] = (1/(x[indxs]*np.sqrt(2*np.pi)*sig)) * np.exp(-0.5 * (np.log(x[indxs]/mu)/sig)**2)
+    #lognormal distribution
+    vals = np.zeros_like(x)
+    if (mu > 0.):
+        vals = (1/(x*np.sqrt(2*np.pi)*sig)) * np.exp(-0.5 * (np.log(x/mu)/sig)**2)
+    elif (mu == 0):
+        #special case of Av = 0.
+        vals[0,:] = 1. 
+    #normalize in loop -- is loop necessary?
+    for i in range(len(vals[0,:])):
+        vals[:,i] /= vals[:,i].sum()
     return vals
 
 def prob_dust(xAv, mu, sig, AvMW=0.0):
+    #lognormal dust with no MW foreground
     return AvMW + lognorm(xAv, mu, sig)
 
 def get_completeness():
+    #completenes set to 1 everywhere for now
     return 1.
 
 def stellar_grid():
@@ -38,97 +47,148 @@ def stellar_grid():
     
 
 def star_prob(alpha, age):
+    #look up closest alpha, age points on grid
     walpha = np.abs((alpha_grid-alpha)).argmin()
     wage = np.abs((age_grid-age)).argmin()
     return full_stellar_prob[:,:,walpha, wage], walpha, wage
 
-
-filelist = np.loadtxt('mock4_cl/temp', dtype="string")
-nfiles=len(filelist) # change to correct number of files when I scale this up
+#read in list of stellar .fits files
+dirname = 'mock4_cl/'
+filename = 'temp'
+filelist = np.loadtxt(dirname+filename, dtype="string")
+nfiles=len(filelist) 
 #nfiles=1
 
-#get the set of stellar probabilities for this set of stellar cluster parameters
+#get the set of stellar probabilities for this set of stellar cluster parameters 
 full_stellar_prob = np.transpose(pyfits.getdata('cluster_test_stellar_prob_av025_rv05.fits', extname='PRIMARY'))
 
-#create grid of cluster points
-
-age_grid = np.arange(6., 8.01, 0.25) # log age from 6 to 8 with 0.25 steps
+#create grid of cluster points that match Karl's outputs
+age_grid = 10**np.arange(6., 8.01, 0.25) # log age from 6 to 8 with 0.25 steps
 alpha_grid = np.arange(0.5, 3.1, 0.25) # alpha from 0.5 to 3 with 0.25 steps
 av_grid = np.arange(0.0, 3.1, 0.25) # av range from 0 to 3 with 0.25 steps
 av_sig_grid = np.arange(0.1, 0.51, 0.1) # av sigrange 0.1 to 0.5 with 0.1 steps
 rv_grid = np.arange(2.5, 5.1, 0.5) #rv range 2.5 to 5.0 with steps of 0.5
 theta_prob = np.zeros((len(alpha_grid), len(age_grid), len(av_grid), len(av_sig_grid), len(rv_grid)))
 
+#set field contribution to zero for now
+field_eps = 0.0
 
-field_eps = 0.0 #epilson value for field stars
+#initialize likelihood
 theta_prob = 0.
+tprob_full = 0.
 
-#first = pyfits.getdata('mock4_randfield_jul12_b1_s10_av025_rv05.fits.gz', extname='AV_PROB')[0,:]
-
+#reminder to un-hardcode expected grid sizes
 star_av_vals = np.zeros((41, nfiles))
 star_rv_vals = np.zeros((10, nfiles))
+star_bmass_vals = np.zeros((50, nfiles))
+star_bmass_prob = np.zeros((50, nfiles))
 fullprob = np.zeros((76, 51, 41, 10, nfiles))
 p_gamma_theta_cluster = np.zeros((76, 51, 41, 10, nfiles))
 p_gamma_theta_field = np.ones((76, 51, 41, 10, nfiles))
+
+#apply completeness and noramlize field population
 p_gamma_theta_field *= get_completeness()
 p_gamma_theta_field /= np.sum(p_gamma_theta_field)
 
+#vector to store most probable stellar masses from Karl's fits
+masses = np.zeros(nfiles)
 
 
+
+
+#read in each star's .fits.gz ND probability
 for c in range(nfiles):
     print 'Reading in Star Number ', c, 'of ', nfiles
-    star_av_vals[:,c] = pyfits.getdata('mock4_cl/'+filelist[c], extname='AV_PROB')[1,:]
-    star_rv_vals[:,c] = pyfits.getdata('mock4_cl/'+filelist[c], extname='RV_PROB')[1,:]
-    fullprob[:,:,:,:,c] = np.transpose(pyfits.getdata('mock4_cl/'+filelist[c], extname='FULL_PROB'))
+    
+    f = pyfits.open(dirname+filelist[c])
+
+    star_av_vals[:,c] = np.array(f["AV_PROB"].data, dtype=float)[0,:] + 0.05
+    star_rv_vals[:,c] = np.array(f["RV_PROB"].data, dtype=float)[0,:]
+
+    fullprob[:,:,:,:,c] = np.array(f["FULL_PROB"].data, dtype=float).T
     fullprob[:,:,:,:,c] /= fullprob[:,:,:,:,c].sum()
 
-
-def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluster=p_gamma_theta_cluster, p_gamma_theta_field=p_gamma_theta_field):
+    star_bmass_vals[:,c], star_bmass_prob[:,c] = np.array(f["BMASS_PROB"].data, dtype=float)
+    f.close()
     
-    priorcheck = [ (theta[0] >= alpha_grid.min()), (theta[0] <= alpha_grid.max()), (theta[1] >= age_grid.min()), (theta[1] <= age_grid.max()), (theta[2] >= av_grid.min()), (theta[2] <= av_grid.max()), (theta[3] >= av_sig_grid.min()), (theta[3] <= av_sig_grid.max())]
+    masses[c] = star_bmass_vals[:,c][star_bmass_prob[:,c] == star_bmass_prob[:,c].max()]
 
+
+def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluster=p_gamma_theta_cluster, p_gamma_theta_field=p_gamma_theta_field, tprob_full=tprob_full):
+    theta = [0.5, 1.0e6, 0.0, 0.1]
+    #set priors on acceptable ranges for alpha, age, av, av_sig, etc
+    priorcheck = [(theta[0] >= alpha_grid.min()), (theta[0] <= alpha_grid.max()), (theta[1] >= age_grid.min()), (theta[1] <= age_grid.max()), (theta[2] >= av_grid.min()), (theta[2] <= av_grid.max()), (theta[3] >= av_sig_grid.min()), (theta[3] <= av_sig_grid.max())]
+    
+    #check to make sure prior conditions are met, if not set prob to -infinity
     if not (False in priorcheck):
+        STRT = time.time()
+        #look up stellar probability on grid for alpha, age from emcee
         p_stellar, walpha, wage = star_prob(theta[0], theta[1])
-        #print 'p_stellar done'
-        if (theta[2] > 0.):
-            p_av = prob_dust(star_av_vals[:, :], theta[2], theta[3])
-            p_av /= [p_av[:,i].sum() for i in range(nfiles)]
+        #get dust probability
+        p_av = prob_dust(star_av_vals, theta[2], theta[3])
+        #combine them to get PDF for group of stars -- seems like a less ineffiicent way to do this
 
-        elif (theta[2] == 0):
-            p_av = np.ones_like(star_av_vals)
-            #p_av = star_av_vals[:,:]*0.
-            #p_av = 1
-            #p_av /= p_av.sum()        
-        elif (theta[2] < 0.):
-            p_av = np.zeros_like(star_av_vals)+1e-50
-        for c in range(nfiles):
-            for x in range(len(fullprob[0,0,:,0])):
-                for y in range(len(fullprob[0,0,0,:])):
-                    p_gamma_theta_cluster[:,:,x,y,c] = p_stellar*p_av[x,c]
-        #pdb.set_trace()
-        p_gamma_theta_cluster *= get_completeness()
-        #p_gamma_theta_cluster[:,:,:,:,i] /= [p_gamma_theta_cluster[:,:,:,:,i].sum() for i in range(nfiles)]
+        # new_p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]  # USE ME!!!
+        p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]
+        #apply completeness function
+        p_gamma_theta_cluster *= get_completeness() 
+
+        #normalize combined P(gamma|theta) -- correct? efficient?
+        s = time.time()
+        #for c in range(nfiles):
+        #    p_gamma_theta_cluster[:,:,:,c] /= np.sum(p_gamma_theta_cluster[:,:,:,c])
+
         p_gamma_theta_cluster /= np.sum(p_gamma_theta_cluster)
-        #pdb.set_trace()
-        #p_gamma_theta = (1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
+
+        #Ignoring field populations for the time being -- seems to be a really slow part of the process otherwise
         p_gamma_theta =  p_gamma_theta_cluster #(1. - field_eps)*p_gamma_theta_cluster + field_eps*p_gamma_theta_field
-       
-        #pdb.set_trace()        
-        tprob_full = fullprob[:,:,:,:,:]*p_gamma_theta
-        tprob = np.sum(tprob_full)
+        
+        '''
+        pdb.set_trace()
+        #compute log probability for all stars in cluster -- correct? efficient?
+        tprob=0
+        s = time.time()
+        print "tprob_full1", time.time() - s
+        s = time.time()
+        #for i in range(nfiles):
+        #    tprob_full = fullprob[:,:,:,:,i]*p_gamma_theta
+        #    tprob += np.log(np.sum(tprob_full))
+        #pdb.set_trace()
+        #tprob_full = np.log(np.sum(tprob_full))
+        '''
+
+        #This sum does what it's supposed to do...BUT...
+        #Current difference with Karl's code is the 'catch' feature...
+        tprob_list = np.sum(np.sum(np.sum(np.sum(fullprob[:,:,:,:,:]*p_gamma_theta[:,:,:,None,:], axis=0), axis=0), axis=0),axis=0)
+
+        # the following line is an unjustified HACK in Karl's code
+        # When the field model exists, this line should be disabled.
+        tprob_list = np.clip(tprob_list, 1e-20, np.infty)
+
+        # what's called `tprob_full` here is called `alog(tprob)` in Karl's code
+        tprob_full = np.sum(np.log(tprob_list))
+        print 'tprob_list', tprob_list.shape, tprob_list.min(), tprob_list.max(), 'tprob_full', tprob_full.shape
+
+        #trying to replicate what Karl's code was doing
+        #He added a catch to exclude(?) really bad fits
+
+        #tprob = np.sum(tprob_full)
             #pdb.set_trace()
             #print c, theta, tprob, p_gamma_theta_cluster.sum()
-        theta_prob += np.log(tprob)
+        #theta_prob += np.log(tprob)
             #print theta, tprob, theta_prob
-        if ((field_eps <= 0.) & (tprob < 1e-50)): 
-            theta_prob = -np.infty
+        #if ((field_eps <= 0.) & (tprob < 1e-50)): 
+        #    theta_prob_full = -np.infty
         #else:        
         #    theta_prob += np.log(tprob)
+        #pdb.set_trace()
+    # if priors not True, then tprob_full should be -infinity
     else:
-        theta_prob = -np.infty
-
-    print theta, theta_prob
-    return theta_prob
+        tprob_full = -np.infty
+    
+    print theta[0], theta[1], theta[2], theta[3], tprob_full
+    #pdb.set_trace()
+    return tprob_full
 
 
 #for c in range(nfiles):
@@ -142,28 +202,24 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
 
 
 #initialization for emcee
+#small number of steps, threads for laptop usage
 
 nwalkers = 8
 ndim = 4
 nburn = 50
 nsteps = 50
+nthreads = 1
 
 
 initial = [np.array([np.random.uniform(alpha_grid.min(), alpha_grid.max()), np.random.uniform(age_grid.min(), age_grid.max()), np.random.uniform(av_grid.min(), av_grid.max()), np.random.uniform(av_sig_grid.min(), av_sig_grid.max())]) for i in xrange(nwalkers)]
 
-
-
-
-
-
-
-sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob)#, threads=nthreads)
+sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, threads=nthreads)
 start = time.time()
 pos,prob,state = sampler.run_mcmc(initial, nburn)
 sampler.reset()
 sampler.run_mcmc(np.array(pos),nsteps, rstate0=state)
 duration = time.time()-start
-
+print 'Sampling done in', duration, 's'
 
 
 
