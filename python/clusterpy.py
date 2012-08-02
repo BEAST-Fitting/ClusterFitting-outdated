@@ -26,7 +26,7 @@ star_av_vals = hdulist['AV_PROB'].data[0,:]
 star_rv_vals = hdulist['RV_PROB'].data[0,:]
 
 #get the set of stellar probabilities for this set of stellar cluster parameters
-hdulist1 = pyfits.open('cluster_test_stellar_prob_av025_rv05.fits')
+hdulist1 = pyfits.open('../data/cluster_test_stellar_prob_av025_rv05.fits')
 full_stellar_prob = np.transpose(hdulist1['PRIMARY'].data)
 
 

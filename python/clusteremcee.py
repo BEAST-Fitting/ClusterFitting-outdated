@@ -60,7 +60,7 @@ nfiles=len(filelist)
 #nfiles=1
 
 #get the set of stellar probabilities for this set of stellar cluster parameters 
-full_stellar_prob = np.transpose(pyfits.getdata('cluster_test_stellar_prob_av025_rv05.fits', extname='PRIMARY'))
+full_stellar_prob = np.transpose(pyfits.getdata('../data/cluster_test_stellar_prob_av025_rv05.fits', extname='PRIMARY'))
 
 #create grid of cluster points that match Karl's outputs
 age_grid = 10**np.arange(6., 8.01, 0.25) # log age from 6 to 8 with 0.25 steps
