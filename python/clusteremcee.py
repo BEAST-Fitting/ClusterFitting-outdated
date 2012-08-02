@@ -53,7 +53,7 @@ def star_prob(alpha, age):
     return full_stellar_prob[:,:,walpha, wage], walpha, wage
 
 #read in list of stellar .fits files
-dirname = 'mock4_cl/'
+dirname = '../mock4_cl/'
 filename = 'temp'
 filelist = np.loadtxt(dirname+filename, dtype="string")
 nfiles=len(filelist) 
@@ -206,8 +206,8 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
 
 nwalkers = 8
 ndim = 4
-nburn = 50
-nsteps = 50
+nburn = 5
+nsteps = 5
 nthreads = 1
 
 
@@ -222,6 +222,8 @@ duration = time.time()-start
 print 'Sampling done in', duration, 's'
 
 
+#change name of ouput file
+np.savetxt('run.txt', sampler.flatchain, fmt='%6.4f')
 
 
                                      
