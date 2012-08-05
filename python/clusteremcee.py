@@ -70,7 +70,7 @@ def star_prob(alpha, age):
 #read in list of stellar .fits files
 dirname = '../mock4_cl/'
 filename = 'temp'
-filelist = np.loadtxt(dirname+filename, dtype="string")
+filelist = np.loadtxt(dirname+filename, dtype="string", skiprows=5)
 nfiles=len(filelist) 
 #nfiles=1
 
@@ -163,8 +163,8 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
         p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]
         #pdb.set_trace()
         #apply completeness function
-        p_gamma_theta_cluster *= get_completeness(band_grid)
-        print 'completeness function check', get_completeness(band_grid).min()
+        p_gamma_theta_cluster = p_gamma_theta_cluster[:,:,:,None,:] * get_completeness(band_grid)[:,:,:,:,None]
+        #print 'completeness function check', get_completeness(band_grid).min()
         #normalize combined P(gamma|theta) -- correct? efficient?
         s = time.time()
         #for c in range(nfiles):
@@ -191,15 +191,16 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
 
         #This sum does what it's supposed to do...BUT...
         #Current difference with Karl's code is the 'catch' feature...
-        tprob_list = np.sum(np.sum(np.sum(np.sum(fullprob[:,:,:,:,:]*p_gamma_theta[:,:,:,None,:], axis=0), axis=0), axis=0),axis=0)
+        tprob_list = np.sum(np.sum(np.sum(np.sum(fullprob[:,:,:,:,:]*p_gamma_theta[:,:,:,:,:], axis=0), axis=0), axis=0),axis=0)
 
         # the following line is an unjustified HACK in Karl's code
         # When the field model exists, this line should be disabled.
         tprob_list = np.clip(tprob_list, 1e-20, np.infty)
 
         # what's called `tprob_full` here is called `alog(tprob)` in Karl's code
+        pdb.set_trace()
         tprob_full = np.sum(np.log(tprob_list))
-        print 'tprob_list', tprob_list.shape, tprob_list.min(), tprob_list.max(), 'tprob_full', tprob_full.shape
+        #print 'tprob_list', tprob_list.shape, tprob_list.min(), tprob_list.max(), 'tprob_full', tprob_full.shape
 
         #trying to replicate what Karl's code was doing
         #He added a catch to exclude(?) really bad fits
@@ -253,9 +254,11 @@ sampler.run_mcmc(np.array(pos),nsteps, rstate0=state)
 duration = time.time()-start
 print 'Sampling done in', duration, 's'
 
+out = sampler.flatchain
 
-#change name of ouput file
-np.savetxt('run.txt', sampler.flatchain, fmt='%6.4f')
+out[:,1]  = np.log10(out[:,1])
+
+np.savetxt('run.txt', out, fmt='%6.4f')
 
 
                                      
