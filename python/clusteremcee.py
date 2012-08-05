@@ -26,9 +26,24 @@ def prob_dust(xAv, mu, sig, AvMW=0.0):
     #lognormal dust with no MW foreground
     return AvMW + lognorm(xAv, mu, sig)
 
-def get_completeness():
-    #completenes set to 1 everywhere for now
-    return 1.
+def get_completeness(band_grid):
+    size_cube = band_grid.shape
+    comp_func = np.zeros((size_cube[1], size_cube[2], size_cube[3], size_cube[4]))
+    f814w_vals = np.reshape(band_grid[3,:,:,:,:], (size_cube[1], size_cube[2], size_cube[3], size_cube[4]))
+    es_points = np.asarray((3.2596e-18,1.34e-18,1.820979E-19,7.033186E-20,1.5233e-20,1.9106e-20))
+    vegamag = np.asarray((22.65,23.46,26.16,25.52,26.07,24.70))
+    waves = np.asarray((275.,336.,475.,814.,1100.,1600.))*1.0e-3
+    zero_points = es_points/10**(-0.4*vegamag)
+    f814w_mags = np.zeros_like(f814w_vals) + 100.
+    indxs = np.where((f814w_vals > 0.0) & (f814w_vals < 100.0))
+    f814w_mags[indxs] = -2.5*np.log10(f814w_vals[indxs]/zero_points[3])
+    indxs = np.where(f814w_mags < 24.0)
+    comp_func[indxs] =1.0
+    #comp_func[comp_func < 1e-5] = 1e-5
+    #comp_func = np.clip(comp_func, 1e-5, 1.)
+    if(np.isfinite(comp_func.sum()) == False):
+        pdb.set_trace()
+    return comp_func
 
 def stellar_grid():
     #read in stellar parameters
@@ -62,6 +77,11 @@ nfiles=len(filelist)
 #get the set of stellar probabilities for this set of stellar cluster parameters 
 full_stellar_prob = np.transpose(pyfits.getdata('../data/cluster_test_stellar_prob_av025_rv05.fits', extname='PRIMARY'))
 
+#grid of band values for completeness
+band_grid = idlsave.read('fit_sed_band_seds_av025_rv05.sav').band_seds[0][0].T
+
+
+
 #create grid of cluster points that match Karl's outputs
 age_grid = 10**np.arange(6., 8.01, 0.25) # log age from 6 to 8 with 0.25 steps
 alpha_grid = np.arange(0.5, 3.1, 0.25) # alpha from 0.5 to 3 with 0.25 steps
@@ -85,9 +105,20 @@ star_bmass_prob = np.zeros((50, nfiles))
 fullprob = np.zeros((76, 51, 41, 10, nfiles))
 p_gamma_theta_cluster = np.zeros((76, 51, 41, 10, nfiles))
 p_gamma_theta_field = np.ones((76, 51, 41, 10, nfiles))
+#p_gamma_theta_field1 = np.ones((76, 51, 41, 10, nfiles))
 
 #apply completeness and noramlize field population
-p_gamma_theta_field *= get_completeness()
+
+
+
+#for i in range(nfiles):
+#    p_gamma_theta_field[:,:,:,:,i] = p_gamma_theta_field[:,:,:,:,i]*get_comp#leteness(band_grid)[:,:,:,:]
+
+#pdb.set_trace()
+
+
+#not exactly equal to loop value above, not sure why, need to check
+p_gamma_theta_field *= get_completeness(band_grid)[:,:,:,:,None]
 p_gamma_theta_field /= np.sum(p_gamma_theta_field)
 
 #vector to store most probable stellar masses from Karl's fits
@@ -115,7 +146,7 @@ for c in range(nfiles):
 
 
 def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluster=p_gamma_theta_cluster, p_gamma_theta_field=p_gamma_theta_field, tprob_full=tprob_full):
-    theta = [0.5, 1.0e6, 0.0, 0.1]
+    #theta = [0.5, 1.0e6, 0.0, 0.1]
     #set priors on acceptable ranges for alpha, age, av, av_sig, etc
     priorcheck = [(theta[0] >= alpha_grid.min()), (theta[0] <= alpha_grid.max()), (theta[1] >= age_grid.min()), (theta[1] <= age_grid.max()), (theta[2] >= av_grid.min()), (theta[2] <= av_grid.max()), (theta[3] >= av_sig_grid.min()), (theta[3] <= av_sig_grid.max())]
     
@@ -130,13 +161,14 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
 
         # new_p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]  # USE ME!!!
         p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]
+        #pdb.set_trace()
         #apply completeness function
-        p_gamma_theta_cluster *= get_completeness() 
-
+        p_gamma_theta_cluster *= get_completeness(band_grid)
+        print 'completeness function check', get_completeness(band_grid).min()
         #normalize combined P(gamma|theta) -- correct? efficient?
         s = time.time()
         #for c in range(nfiles):
-        #    p_gamma_theta_cluster[:,:,:,c] /= np.sum(p_gamma_theta_cluster[:,:,:,c])
+        #p_gamma_theta_cluster[:,:,:,c] /= np.sum(p_gamma_theta_cluster[:,:,:,c])
 
         p_gamma_theta_cluster /= np.sum(p_gamma_theta_cluster)
 
