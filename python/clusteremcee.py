@@ -26,6 +26,10 @@ def prob_dust(xAv, mu, sig, AvMW=0.0):
     #lognormal dust with no MW foreground
     return AvMW + lognorm(xAv, mu, sig)
 
+def prob_rv(xrv, mu, sig):
+    #lognormal dust with no MW foreground
+    return lognorm(xrv, mu, sig)
+
 def get_completeness(band_grid):
     size_cube = band_grid.shape
     comp_func = np.zeros((size_cube[1], size_cube[2], size_cube[3], size_cube[4]))
@@ -78,7 +82,7 @@ nfiles=len(filelist)
 full_stellar_prob = np.transpose(pyfits.getdata('../data/cluster_test_stellar_prob_av025_rv05.fits', extname='PRIMARY'))
 
 #grid of band values for completeness
-band_grid = idlsave.read('fit_sed_band_seds_av025_rv05.sav').band_seds[0][0].T
+band_grid = idlsave.read('fit_sed_band_seds_av025_rv05.sav').band_seds[0][0].T 
 
 
 
@@ -88,6 +92,7 @@ alpha_grid = np.arange(0.5, 3.1, 0.25) # alpha from 0.5 to 3 with 0.25 steps
 av_grid = np.arange(0.0, 3.1, 0.25) # av range from 0 to 3 with 0.25 steps
 av_sig_grid = np.arange(0.1, 0.51, 0.1) # av sigrange 0.1 to 0.5 with 0.1 steps
 rv_grid = np.arange(2.5, 5.1, 0.5) #rv range 2.5 to 5.0 with steps of 0.5
+rv_sig_grid = np.arange(0.1, 0.51, 0.1) # av sigrange 0.1 to 0.5 with 0.1 steps
 theta_prob = np.zeros((len(alpha_grid), len(age_grid), len(av_grid), len(av_sig_grid), len(rv_grid)))
 
 #set field contribution to zero for now
@@ -146,10 +151,9 @@ for c in range(nfiles):
 
 
 def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluster=p_gamma_theta_cluster, p_gamma_theta_field=p_gamma_theta_field, tprob_full=tprob_full):
-    #theta = [0.5, 1.0e6, 0.0, 0.1]
+    #theta = [0.5, 1.0e6, 0.0, 0.1, 3.5, 0.2]
     #set priors on acceptable ranges for alpha, age, av, av_sig, etc
-    priorcheck = [(theta[0] >= alpha_grid.min()), (theta[0] <= alpha_grid.max()), (theta[1] >= age_grid.min()), (theta[1] <= age_grid.max()), (theta[2] >= av_grid.min()), (theta[2] <= av_grid.max()), (theta[3] >= av_sig_grid.min()), (theta[3] <= av_sig_grid.max())]
-    
+    priorcheck = [(theta[0] >= alpha_grid.min()), (theta[0] <= alpha_grid.max()), (theta[1] >= age_grid.min()), (theta[1] <= age_grid.max()), (theta[2] >= av_grid.min()), (theta[2] <= av_grid.max()), (theta[3] >= av_sig_grid.min()), (theta[3] <= av_sig_grid.max()), (theta[4] >= rv_grid.min()), (theta[4] <= rv_grid.max()), (theta[5] >= rv_sig_grid.min()), (theta[5] <= rv_sig_grid.max())]
     #check to make sure prior conditions are met, if not set prob to -infinity
     if not (False in priorcheck):
         STRT = time.time()
@@ -157,13 +161,15 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
         p_stellar, walpha, wage = star_prob(theta[0], theta[1])
         #get dust probability
         p_av = prob_dust(star_av_vals, theta[2], theta[3])
+        p_rv = prob_rv(star_rv_vals, theta[4], theta[5])
+        #pdb.set_trace()
         #combine them to get PDF for group of stars -- seems like a less ineffiicent way to do this
-
         # new_p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]  # USE ME!!!
-        p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]
+        #p_gamma_theta_cluster = p_stellar[:,:,None,None] * p_av[None,None,:,:]*p_rv[None, None, :,:]
+        p_gamma_theta_cluster = p_stellar[:,:,None,None,None] * p_av[None,None,:,None,:]*p_rv[None, None, None, :,:]
         #pdb.set_trace()
         #apply completeness function
-        p_gamma_theta_cluster = p_gamma_theta_cluster[:,:,:,None,:] * get_completeness(band_grid)[:,:,:,:,None]
+        p_gamma_theta_cluster = p_gamma_theta_cluster[:,:,:,:] * get_completeness(band_grid)[:,:,:,:,None]
         #print 'completeness function check', get_completeness(band_grid).min()
         #normalize combined P(gamma|theta) -- correct? efficient?
         s = time.time()
@@ -198,7 +204,7 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
         tprob_list = np.clip(tprob_list, 1e-20, np.infty)
 
         # what's called `tprob_full` here is called `alog(tprob)` in Karl's code
-        pdb.set_trace()
+        #pdb.set_trace()
         tprob_full = np.sum(np.log(tprob_list))
         #print 'tprob_list', tprob_list.shape, tprob_list.min(), tprob_list.max(), 'tprob_full', tprob_full.shape
 
@@ -219,7 +225,7 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
     else:
         tprob_full = -np.infty
     
-    print theta[0], theta[1], theta[2], theta[3], tprob_full
+    print theta[0], theta[1], theta[2], theta[3],theta[4], theta[5], tprob_full
     #pdb.set_trace()
     return tprob_full
 
@@ -237,14 +243,14 @@ def lnprob(theta, filelist=filelist, theta_prob=theta_prob, p_gamma_theta_cluste
 #initialization for emcee
 #small number of steps, threads for laptop usage
 
-nwalkers = 8
-ndim = 4
+nwalkers = 12
+ndim = 6
 nburn = 5
 nsteps = 5
 nthreads = 1
 
 
-initial = [np.array([np.random.uniform(alpha_grid.min(), alpha_grid.max()), np.random.uniform(age_grid.min(), age_grid.max()), np.random.uniform(av_grid.min(), av_grid.max()), np.random.uniform(av_sig_grid.min(), av_sig_grid.max())]) for i in xrange(nwalkers)]
+initial = [np.array([np.random.uniform(alpha_grid.min(), alpha_grid.max()), np.random.uniform(age_grid.min(), age_grid.max()), np.random.uniform(av_grid.min(), av_grid.max()), np.random.uniform(av_sig_grid.min(), av_sig_grid.max()), np.random.uniform(rv_grid.min(), rv_grid.max()), np.random.uniform(rv_sig_grid.min(), rv_sig_grid.max())]) for i in xrange(nwalkers)]
 
 sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, threads=nthreads)
 start = time.time()
